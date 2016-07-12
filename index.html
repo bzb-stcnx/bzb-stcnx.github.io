@@ -1,0 +1,48 @@
+<h3>validate email with mailgun api</h3>
+<form class="request-form">
+  <input type="email" name="address" placeholder="email" value="john.doe@example.com" required pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"/><br/>
+  <input type="text" name="api_key" placeholder="public api key" value="pubkey-5ogiflzbnjrljiky49qxsiozqef5jxp7" required/>
+  <button type="submit">validate</button>
+</form>
+<div class='log'>
+</div>
+<script type="text/javascript">
+'use strict'
+var logdiv = document.querySelector('.log')
+var log = function (msg) {
+	return function (val) {
+    console.log(msg, val)
+    logdiv.innerHTML += `<p>${msg} ${typeof val === 'object' ? JSON.stringify(val) : val}</p>`
+	}
+}
+
+var mailgunApi = 'https://api.mailgun.net/v3/address/validate'
+
+var form = document.querySelector('.request-form')
+
+form.addEventListener('submit', function (event) {
+	var data = new Map(new FormData(form))
+  var url = new URL(mailgunApi)
+ 
+  url.searchParams.append('address', data.get('address'))
+  url.searchParams.append('api_key', data.get('api_key'))
+
+	log('processing')('...')
+
+	fetch(url, {
+  	method: 'GET',
+    mode: 'cors'
+  })
+  .then(function (res) {
+  	return res.json()
+  })
+  .then(function (json) {
+  	log('done:')(json)
+  })
+  .catch(function (err) {
+  	log('fetch-error')(err)
+  })
+
+	event.preventDefault()
+})
+</script>
