@@ -1,5 +1,7 @@
 <h3>worker</h3>
 
+<script  type="text/javascript" src="https://wzrd.in/standalone/util"></script>
+
 <script type="text/plain" id="service.js">
 'use strict'
 function getServiceInstance() {
@@ -160,7 +162,7 @@ function appendLogger (document) {
 'use strict'
 var log = appendLogger(document)()
 
-log('Worker support:')(typeof Worker !== 'undefined')
+log('Worker support:', typeof Worker !== 'undefined')
 
 
 // 'concurrently' call worker methods through proxy
