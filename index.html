@@ -1,302 +1,40 @@
 <h3>worker</h3>
 
 <script  type="text/javascript" src="https://wzrd.in/standalone/util"></script>
-
-<script type="text/plain" id="service.js">
-'use strict'
-function getServiceInstance() {
-  function delay (result, delay) {
-    return function () {
-      return new Promise(function (resolve) {
-        setTimeout(function () {
-          resolve(result)
-        }, delay)
-      })
-    }
-  }
-
-  return  {
-    fast: delay('0 (based on very limited processing...)', 500 /* ms */),
-    slow: delay('42 (based on very extensive processing...)', 1500 /* ms */),
-    explode: function () {
-      return Promise.reject(new Error('boom'))
-    },
-    double: function (spec) {
-      return Promise.resolve(2 * spec.magic)
-    }
-  }
-}
-</script>
-
-<script type="text/plain" id="worker.js">
-'use strict'
-// see https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Using_web_workers#Embedded_workers
-var service = getServiceInstance()
-
-self.onmessage = function (event) {
-  var uuid = event.data.uuid
-  var method = event.data.method
-  if (!method) return postServiceMethods(uuid)
-
-  try {
-    if (typeof service[method] !== 'function') throw new Error('unknown method')
-    service[method].apply(service, event.data.args)
-    .then(function (res) {
-      resolve(res, uuid)
-    })
-    .catch(function (err) {
-      reject(err, uuid)
-    })
-  } catch (err) {
-    reject(err, uuid)
-  }
-}
-
-function resolve (res, uuid) {
-  self.postMessage({
-    uuid: uuid,
-    method: 'resolve',
-    value: res
-  })
-}
-
-function reject (err, uuid) {
-  self.postMessage({
-    uuid: uuid,
-    method: 'reject',
-    value: {
-      stack: err.stack,
-      message: err.message
-    }
-  })
-}
-
-function postServiceMethods (uuid) {
-  var methods = getFilteredPropertyNames(service, function (val, key) {
-    return typeof val === 'function'
-  })
-
-  self.postMessage({
-    uuid: uuid,
-    methods: methods
-  })
-}
-
-/**
-  * @param {Object} obj
-  * @param {(v: any, k: string) => boolean} predicate
-  * @return {string[]} names of properties of obj and its prototypes
-  * for which the predicate returns true
-  */
-function getFilteredPropertyNames (obj, predicate) {
-  var props = []
-  var prop
-  for (prop in obj) {
-    if (predicate(obj[prop], prop)) {
-      props.push(prop)
-    }
-  }
-  return props
-}
-</script>
+<script  type="text/javascript" src="https://cdn.jsdelivr.net/pouchdb/5.4.4/pouchdb.min.js"></script>
+<script  type="text/javascript" src="https://wzrd.in/standalone/pouchdb-adapter-localstorage"></script>
+<script  type="text/javascript" src="https://wzrd.in/standalone/pouchdb-adapter-websql"></script>
 
 <script type="text/javascript">
 'use strict'
 var log = appendLogger(document)()
 
-log('Worker support:', typeof Worker !== 'undefined')
+PouchDB
+.plugin(pouchdbAdapterWebsql)
+.plugin(pouchdbAdapterLocalstorage)
 
-
-// 'concurrently' call worker methods through proxy
-var service = proxyService(getWorkerBlob('worker.js', 'service.js'))
-
-service
-.then(function (service) {
-//	log('service')(service)
-	return service.slow()
-})
-
-service
-.then(function (service) {
-	return service.explode()
-})
-.then(log('OOOPS! explode did not explode as expected...'))
-.catch(log('OK: error from explode as expected'))
-
-service
-.then(function (service) {
-	return service.double({ magic: 21 })
-})
-
-service
-.then(function (service) {
-	return service.fast()
-})
-
-service
-.then(function (service) {
-	return service.slow()
-})
-.then(function () {
-	return service
-})
-.then(function (service) {
-	service.terminate
-})
-.then(log('worker terminated'))
-
-service
-.then(function (service) {
-	return service.fast()
-})
-
-/**
- * @param {string[]} ...ids list of the id attribute of script tags
- * @return {Blob} of worker
- */
-function getWorkerBlob(/* ...ids */) {
-	// see https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Using_web_workers#Embedded_worker
-  var scripts = Array.prototype.slice.call(arguments).map(function (id) {
-  	return document.getElementById(id).textContent
-  })
-  return new Blob(scripts, { type: "text/javascript" })
+var logdiv = document.querySelector('.log') // log output to DOM
+var DB_NAME = 'mydb'
+var options = {
+	adapter: 'idb',
+	size: 4 /* MB */
 }
+log('options =', options)
 
-/**
- * @param {Blob} blob of service
- * @return {Promise<Object>} promise of proxied service object
- * for the service spawned in a {Worker}
- */
-function proxyService (blob) {
-	/**
-   * keep track of incrementing uuid
-   */
-  class Uuid {
-    constructor () {
-      this.uuid = 0
-    }
-    next () {
-      if (!Number.isFinite(++this.uuid)) { // wrap
-      	return this.uuid = 0
-      }
-      return this.uuid
-    }
-  }
-
-  class WorkerProxy {
-  	/**
-     * @param {Blob} blob of service
-     * @return {Promise<Object>} promise of proxied service object
-     * for the service spawned in a {Worker}
-     */
-  	static forService (blob) {
-    	var proxy = new WorkerProxy(blob)
-      return proxy.call() // proxy service methods
-    }
-
-    /**
-     * @param {Blob} of type 'text/javascript' of the worker code
-     */
-    constructor (blob) {
-      this.worker = new Worker(URL.createObjectURL(blob))
-      this.worker.onmessage = this.newMessageHandler()
-      this.uuid = new Uuid()
-      this.tasks = {}
-    }
-
-    newMessageHandler () {
-    	var proxy = this
-      return function onmessage (event) {
-        var methods
-        var result = {
-        	uuid: event.data.uuid,
-          method: event.data.method,
-          value: event.data.value
-        }
-
-				if (!result.method) { // initialize methods
-          proxy.proxyMethods(event.data.methods)
-          result.method = 'resolve'
-          result.value = proxy.service
-        }
-
-        if (typeof proxy[result.method] !== 'function') {
-          throw new Error('unknown method')
-        }
-
-        proxy[result.method](result)
-      }
-    }
-
-    proxyMethods (methods, proxyFunction) {
-      if (!methods) { return }
-      var proxy = this
-
-      this.service = methods
-      .reduce(function (methods, method) {
-        methods[method] = proxy.call.bind(proxy, method)
-        return methods
-      }, {})
-    }
-
-    call (method /*, ...arguments */) {
-      var proxy = this
-      var uuid = this.uuid.next()
-      var args = Array.prototype.slice.call(arguments)
-      args.shift() // remove method argument
-
-			function postCall (resolve, reject) {
-        proxy.tasks[uuid] = {
-          resolve: resolve,
-          reject: reject
-        }
-        log('start')('uuid: ', uuid, ', method: ', method || '(get service methods)', ', args: ', args)
-        log('queue length:')(Object.keys(proxy.tasks).length)
-        proxy.worker.postMessage({
-          uuid: uuid,
-        	method: method,
-          args: args
-        })
-      }
-
-      return new Promise(postCall)
-      .then(function (res) { // cleanup and log
-        delete proxy.tasks[uuid]
-        log('resolved')('uuid: ', uuid, ', method: ', method || '(get service methods)', ', result: ', res)
-        log('queue length:')(Object.keys(proxy.tasks).length)
-        return res
-      })
-      .catch(function (err) { // cleanup and log
-        delete proxy.tasks[uuid]
-        log('rejected')('uuid: ', uuid, ', method: ', method || '(methods)', err)
-        log('queue length:')(Object.keys(proxy.tasks).length)
-        throw err
-      })
-    }
-
-    resolve (result) {
-      var task = this.tasks[result.uuid]
-      if (!task || (typeof task.resolve !== 'function')) throw new Error('oops could not resolve')
-      return task.resolve(result.value)
-    }
-
-    reject (error) {
-      var uuid = Number.parseInt(error.uuid)
-      var task = this.tasks[uuid]
-      var err
-      if (!task || (typeof task.reject !== 'function')) throw new Error('oops could not reject')
-      err = new Error(error.value.message)
-      err.stack = error.value.stack || err.stack
-      return task.reject(err)
-    }
-
-    terminate () {
-      return this.worker.terminate()
-    }
-  }
-
-  return WorkerProxy.forService(blob)
-}
+var db = new PouchDB(DB_NAME, options)
+.catch(function (err) {
+  log('trying...', 'websql')
+	options.adapter = 'websql'
+  return new PouchDB(DB_NAME, options)
+})
+.catch(function (err) {
+  log('trying...', 'localstorage')
+	options.adapter = 'localstorage'
+  return new PouchDB(DB_NAME, options)
+})
+.then(log)
+.catch(log)
+log('new PouchDB("mydb", options)')
 
 /**
  * @param {Document} document
