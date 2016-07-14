@@ -1,7 +1,7 @@
-<h3>worker</h3>
+<h3>PouchDB</h3>
 
 <script  type="text/javascript" src="https://wzrd.in/standalone/util"></script>
-<script  type="text/javascript" src="https://cdn.jsdelivr.net/pouchdb/5.4.4/pouchdb.min.js"></script>
+<script  type="text/javascript" src="https://cdn.jsdelivr.net/pouchdb/5.4.5/pouchdb.min.js"></script>
 <script  type="text/javascript" src="https://wzrd.in/standalone/pouchdb-adapter-localstorage"></script>
 <script  type="text/javascript" src="https://wzrd.in/standalone/pouchdb-adapter-websql"></script>
 
@@ -32,8 +32,8 @@ var db = new PouchDB(DB_NAME, options)
 	options.adapter = 'localstorage'
   return new PouchDB(DB_NAME, options)
 })
-.then(log)
-.catch(log)
+.then(log('success'))
+.catch(log('error'))
 log('new PouchDB("mydb", options)')
 
 /**
