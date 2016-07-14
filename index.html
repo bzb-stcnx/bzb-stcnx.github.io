@@ -102,64 +102,6 @@ function getFilteredPropertyNames (obj, predicate) {
 
 <script type="text/javascript">
 'use strict'
-/**
- * @param {Document} document
- * @return {() => (() => void|(() => void))} a factory that returns
- * a log function for logging into a PRE tag
- * appended at the end of the body.
- * the returned log function that either
- * * directly logs all arguments if given more than one argument,
- * * or returns a log function that appends a given tag string
- * to all logged output, if called only with the tag string.
- *
- * log output is both appended to the dedicated PRE tag,
- * and to the console.
- *
- * examples:
- * var log = appendLogger(document)()
- * log('example:', { bar: 'bar' }) // example: { bar: 'bar' }
- *
- * Promise.resolve([ 'foo', 'baz' ])
- * .then(log('resolved')) // resolved: [ 'foo', 'baz' ]
- */
-function appendLogger (document) {
-  class Logger {
-    static getInstance () {
-    	if (!Logger.instance) {
-      	var logger = new Logger(document)
-        Logger.instance = logger.tag.bind(logger)
-      }
-      return Logger.instance
-    }
-
-    constructor (document) {
-      this.out = document.createElement('PRE')
-      document.body.appendChild(this.out)
-    }
-
-		log (/* ...args[] */) {
-      var args = Array.prototype.slice.call(arguments)
-      var textnode = document.createTextNode(args.map(toString).join(' ') + '\n')
-      console.log.apply(console, args)
-      this.out.appendChild(textnode)
-    }
-
-    tag (tag) {
-      return (arguments.length === 1) ?
-      this.log.bind(this, tag + ':') : this.log.apply(this, arguments)
-    }
-  }
-
-  function toString (val) {
-    return (typeof val === 'string') ? val : util.inspect(val)
-  }
-
-  return Logger.getInstance
-}
-</script>
-
-<script type="text/javascript">
-'use strict'
 var log = appendLogger(document)()
 
 log('Worker support:', typeof Worker !== 'undefined')
@@ -356,5 +298,58 @@ function proxyService (blob) {
   return WorkerProxy.forService(blob)
 }
 
+/**
+ * @param {Document} document
+ * @return {() => (() => void|(() => void))} a factory that returns
+ * a log function for logging into a PRE tag
+ * appended at the end of the body.
+ * the returned log function that either
+ * * directly logs all arguments if given more than one argument,
+ * * or returns a log function that appends a given tag string
+ * to all logged output, if called only with the tag string.
+ *
+ * log output is both appended to the dedicated PRE tag,
+ * and to the console.
+ *
+ * examples:
+ * var log = appendLogger(document)()
+ * log('example:', { bar: 'bar' }) // example: { bar: 'bar' }
+ *
+ * Promise.resolve([ 'foo', 'baz' ])
+ * .then(log('resolved')) // resolved: [ 'foo', 'baz' ]
+ */
+function appendLogger (document) {
+  class Logger {
+    static getInstance () {
+    	if (!Logger.instance) {
+      	var logger = new Logger(document)
+        Logger.instance = logger.label.bind(logger)
+      }
+      return Logger.instance
+    }
 
+    constructor (document) {
+      this.out = document.createElement('PRE')
+      document.body.appendChild(this.out)
+    }
+
+		log (/* ...args[] */) {
+      var args = Array.prototype.slice.call(arguments)
+      var textnode = document.createTextNode(args.map(toString).join(' ') + '\n')
+      console.log.apply(console, args)
+      this.out.appendChild(textnode)
+    }
+
+    label (tag) {
+      return (arguments.length === 1) ?
+      this.log.bind(this, tag + ':') : this.log.apply(this, arguments)
+    }
+  }
+
+  function toString (val) {
+    return (typeof val === 'string') ? val : util.inspect(val)
+  }
+
+  return Logger.getInstance
+}
 </script>
